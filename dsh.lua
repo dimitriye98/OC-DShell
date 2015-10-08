@@ -107,7 +107,16 @@ local function tokenize(value)
 				token = newOp
 			else
 				if op then -- end of operator?
-					table.insert(tokens, token)
+					local foundOp = false
+					for _, v in pairs(operators) do
+						if v == token then
+							table.insert(tokens, token)
+							foundOp = true
+						end
+					end
+					if not foundOp then
+						tokens[#tokens] = tokens[#tokens]..token
+					end
 					token = ""
 					op = false
 				end
