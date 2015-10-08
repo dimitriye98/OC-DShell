@@ -626,7 +626,14 @@ if args.version then
 end
 
 local quotePrefixes = {["'"] = "quote> ", ["\""] = "dquote> ", ["`"] = "bquote> "}
-if #args == 0 and (io.input() == io.stdin or options.i) and not options.c then
+if options.c then
+	-- noninteractive from commandline
+	local result = table.pack(execute(nil, args[1])) --TODO capture parameters into numbered params
+	if not result[1] then
+		io.stderr:write(result[2], 0)
+	end
+	return table.unpack(result, 2)
+elseif (io.input() == io.stdin or options.i) then
 	-- interactive shell.
 	while true do
 		if not term.isAvailable() then -- don't clear unless we lost the term
@@ -722,13 +729,6 @@ elseif #args == 0 and (io.input() ~= io.stdin) then
 			end
 		end
 	end
--- elseif type(args[1]) == "string" then
--- 	-- noninteractive from commandline
--- 	local result = table.pack(execute(nil, ...))
--- 	if not result[1] then
--- 		error(result[2], 0)
--- 	end
--- 	return table.unpack(result, 2)
 else
 	-- execute command.
 	local result = table.pack(execute(...))
