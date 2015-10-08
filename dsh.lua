@@ -211,6 +211,8 @@ local function evaluate(value)
 				init = init + 2
 			else
 				-- plaintext?
+				-- NOTE: backticks will be treated as plaintext
+				-- and evaluated in a separate pass
 				match = value:match("^([^']+)%b''", init)
 				if not match then -- unmatched single quote.
 					match = value:match('^([^"]+)%b""', init)
@@ -229,6 +231,10 @@ local function evaluate(value)
 		end
 		init = init + #match
 	until init > #value
+
+	-- TODO Evaluate backticks, need to modularize
+	--      code more to make this possible
+
 	return results
 end
 
