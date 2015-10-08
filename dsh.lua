@@ -621,6 +621,10 @@ local function hintHandler(line, cursor)
 	return result
 end
 
+if args.version then
+	return print("OpenComputers dsh 0.1.0")
+end
+
 local quotePrefixes = {["'"] = "quote> ", ["\""] = "dquote> ", ["`"] = "bquote> "}
 if #args == 0 and (io.input() == io.stdin or options.i) and not options.c then
 	-- interactive shell.
