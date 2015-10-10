@@ -818,13 +818,16 @@ end
 
 -------------------------------------------------------------------------------
 
-local function runPipeline(env, pipeline, ...)
+local function runPipeline(input, output, env, pipeline, ...)
 	if pipeline[1].program == "exit" then
 		-- If the first command exits further
 		-- processing is unnecessary.
 		local code = pipeline[1].args[1]
 		os.exit(tonumber(code) or code)
 	end
+
+	input  = input or io.input()
+	output = output or io.output()
 
 	-- Piping data between programs works like so:
 	-- program1 gets its output replaced with our custom stream.
@@ -850,7 +853,7 @@ local function runPipeline(env, pipeline, ...)
 						error("could not open '" .. command.input .. "': " .. reason, 0)
 					end
 					table.insert(inputs, file)
-					if pipes[i - 1] then
+					if i > 1 and pipes[i - 1] then
 						pipes[i - 1].stream.redirect.read = file
 						input = pipes[i - 1]
 					else
@@ -868,7 +871,7 @@ local function runPipeline(env, pipeline, ...)
 						io.write("\n")
 					end
 					table.insert(outputs, file)
-					if pipes[i] then
+					if i < #pipeline and pipes[i] then
 						pipes[i].stream.redirect.write = file
 						output = pipes[i]
 					else
@@ -890,7 +893,7 @@ local function runPipeline(env, pipeline, ...)
 						error("could not open '" .. command.input .. "': " .. reason, 0)
 					end
 					table.insert(inputs, file)
-					if pipes[i - 1] then
+					if i > 1 and pipes[i - 1] then
 						pipes[i - 1].stream.redirect.read = file
 						io.input(pipes[i - 1])
 					else
@@ -908,7 +911,7 @@ local function runPipeline(env, pipeline, ...)
 						io.write("\n")
 					end
 					table.insert(outputs, file)
-					if pipes[i] then
+					if i < #pipeline and pipes[i] then
 						pipes[i].stream.redirect.write = file
 						io.output(pipes[i])
 					else
@@ -927,10 +930,14 @@ local function runPipeline(env, pipeline, ...)
 		if i < #pipeline and pipeline[i + 1].program ~= "exit" then
 			pipes[i] = require("buffer").new("rw", memoryStream.new())
 			pipes[i]:setvbuf("no")
+		else
+			pipes[i] = output
 		end
 		if i > 1 then
 			pipes[i - 1].stream.next = threads[i]
 			pipes[i - 1].stream.args = command.args
+		else
+			pipes[i - 1] = input
 		end
 	end
 
@@ -993,7 +1000,7 @@ local function runPipeline(env, pipeline, ...)
 	return table.unpack(result, 1, result.n)
 end
 
-local function execute(env, command, ...)
+local function eval(input, output, env, command, ...)
 	checkArg(1, command, "string")
 	local commands, reason, quote = parseCommands(command)
 	if not commands then
@@ -1023,7 +1030,7 @@ local function execute(env, command, ...)
 	-- Run pipelines
 	for i, pipeCell in ipairs(pipelines) do
 		local op, pipeline = pipeCell.op, pipeCell.pipeline
-		local results = {runPipeline(env, pipeline, ...)}
+		local results = {runPipeline(input, output, env, pipeline, ...)}
 		if results[1] == "exit" then
 			out = results
 			break
@@ -1040,6 +1047,10 @@ local function execute(env, command, ...)
 		out = results
 	end
 	return table.unpack(out)
+end
+
+local function execute(...)
+	return eval(nil, nil, ...)
 end
 
 local args, options = shell.parse(...)
