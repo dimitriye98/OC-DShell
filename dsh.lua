@@ -19,44 +19,129 @@ end
 function memoryStream:seek()
 	return nil, "bad file descriptor"
 end
+do
+	local function formatPattern(p)
+		return "^"..p.."(.*)"
+	end
 
-function memoryStream:read(n)
-	if self.closed then
-		if self.buffer == "" and self.redirect.read then
-			return self.redirect.read:read(n)
+	local function format(f)
+		local out = {}
+		for i,v in ipairs(f) do
+			out[i] = formatPattern(v)
+		end
+		return out
+	end
+
+	function readRaw(param, n)
+		if self.closed then
+			if self.buffer == "" and self.redirect.read then
+				return self.redirect.read:read(param)
+			else
+				return nil -- eof
+			end
+		end
+		if type(param) == "number" then
+			while #self.buffer < param do
+				self.args = table.pack(coroutine.yield(table.unpack(self.result)))
+			end
+			local result = string.sub(self.buffer, 1, param)
+			self.buffer = string.sub(self.buffer, param + 1)
+			return result
+		elseif param == "*n" then
+			local formats = {
+				format{"[+-]?", "0x", "%x+"},
+				format{"[+-]?", "0x", "%x*", "%.", "%x+"},
+				format{"[+-]?", "0x", "%x+", "%.", "%x*"},
+				format{"[+-]?", "0x", "%x*", "[pP]", "[+-]?", "%x+"},
+				format{"[+-]?", "0x", "%x*", "%.", "%x+", "[pP]", "[+-]?", "%x+"},
+				format{"[+-]?", "0x", "%x+", "%.", "%x*", "[pP]", "[+-]?", "%x+"},
+				format{"[+-]?", "%d+"},
+				format{"[+-]?", "%d*", "%.", "%d+"},
+				format{"[+-]?", "%d+", "%.", "%d*"},
+				format{"[+-]?", "%d*", "[eE]", "[+-]?", "%d+"},
+				format{"[+-]?", "%d*", "%.", "%d+", "[eE]", "[+-]?", "%d+"},
+				format{"[+-]?", "%d+", "%.", "%d*", "[eE]", "[+-]?", "%d+"}
+			}
+			local accumulator = ""
+			while #formats > 0 do
+				accumulator = accumulator..self:read(1)
+				local newFormats = {}
+				for i, format in ipairs(formats) do
+					local verify = accumulator
+					for _, pattern in ipairs(format) do
+						verify = verify:match(pattern)
+						if verify == "" or not verify then
+							break
+						end
+					end
+					if verify then
+						table.insert(newFormats, format)
+					end
+				end
+			end
+			return tostring(accumulator)
+		elseif param == "*a" then
+			local eot = string.char(0x04)
+			while not buffer.find("\n"..eot) do
+				self.args = table.pack(coroutine.yield(table.unpack(self.result)))
+			end
+			local ret
+			ret, buffer = buffer:match("(.-\n)"..eot.."(.*)")
+			return ret
+		elseif param == "*L" then
+			while not buffer.find("\n") do
+				self.args = table.pack(coroutine.yield(table.unpack(self.result)))
+			end
+			local ret
+			ret, buffer = buffer:match("(.-\n)(.*)")
+			return ret
+		elseif param == "*l" or param == nil then
+			while not buffer.find("\n") do
+				self.args = table.pack(coroutine.yield(table.unpack(self.result)))
+			end
+			local ret
+			ret, buffer = buffer:match("(.-)\n(.*)")
+			return ret
 		else
-			return nil -- eof
+			error("bad argument #"..n.." to 'read' (invalid option)", 3)
 		end
 	end
-	if self.buffer == "" then
-		self.args = table.pack(coroutine.yield(table.unpack(self.result)))
+
+	function memoryStream:read(...)
+		local modes = table.pack(...)
+		local out = {}
+		for i=1, modes.n do
+			out[i] = rawRead(modes[i], i)
+		end
+		out.n = modes.n
+		return table.unpack(out)
 	end
-	local result = string.sub(self.buffer, 1, n)
-	self.buffer = string.sub(self.buffer, n + 1)
-	return result
 end
 
-function memoryStream:write(value)
-	if not self.redirect.write and self.closed then
-		-- if next is dead, ignore all writes
-		if coroutine.status(self.next) ~= "dead" then
-			error("attempt to use a closed stream")
+function memoryStream:write(...)
+	local params = table.pack(...)
+	for i=1, params.n do
+		if type(params[i]) == "number" then -- coerce type
+			params[i] = tostring(params[i])
 		end
-		return true
-	end
-	if self.redirect.write then
-		self.redirect.write:write(value)
-	end
-	if not self.closed then
-		self.buffer = self.buffer .. value
-		self.result = table.pack(coroutine.resume(self.next, table.unpack(self.args)))
-		if coroutine.status(self.next) == "dead" then
-			self:close()
+		checkArg(i, params[i], "string")
+		if not self.redirect.write and self.closed then
+			error("attempt to use a closed stream", 2)
 		end
-		if not self.result[1] then
-			error(self.result[2], 0)
+		if self.redirect.write then
+			self.redirect.write:write(params[i])
 		end
-		table.remove(self.result, 1)
+		if not self.closed then
+			self.buffer = self.buffer .. params[i]
+			self.result = table.pack(coroutine.resume(self.next, table.unpack(self.args)))
+			if coroutine.status(self.next) == "dead" then
+				self:close()
+			end
+			if not self.result[1] then
+				error(self.result[2], 0)
+			end
+			table.remove(self.result, 1)
+		end
 	end
 	return true
 end
