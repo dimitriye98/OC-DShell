@@ -422,7 +422,7 @@ expand = function(value)
 end
 
 local function glob(value)
-	if not value:find("*", 1, true) and not value:find("?", 1, true) then
+	if not value:match("[^\\]%*") and not value:match("[^\\]%?") then
 		-- Nothing to do here.
 		return {expand(value)}
 	end
@@ -430,7 +430,10 @@ local function glob(value)
 	local paths = {value:sub(1, 1) == "/" and "/" or shell.getWorkingDirectory()}
 	for i, segment in ipairs(segments) do
 		local nextPaths = {}
-		local pattern = segment:gsub("*", ".*"):gsub("?", ".")
+		local pattern = segment:gsub("([^\\])%*", "%1.*")
+		                       :gsub("^%*", ".*")
+		                       :gsub("([^\\])%?", "%1.")
+		                       :gsub("^%?", ".")
 		if pattern == segment then
 			-- Nothing to do, concatenate as-is.
 			for _, path in ipairs(paths) do
