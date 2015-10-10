@@ -306,9 +306,118 @@ local function tokenize(value)
 	return tokens
 end
 
-local function expand(value)
+local function nilify(word)
+	if word == "" then
+		return nil
+	else
+		return word
+	end
+end
+
+local paramOps = {
+	[":-"] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if nilify(value) then
+			return value
+		else
+			return word
+		end
+	end,
+	["-"] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if value then
+			return nilify(value)
+		else
+			return word
+		end
+	end,
+	[":="] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if nilify(value) then
+			return value
+		else
+			os.setenv(param, word)
+			return word
+		end
+	end,
+	["="] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if value then
+			return nilify(value)
+		else
+			return word
+		end
+	end,
+	[":?"] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if nilify(value) then
+			return value
+		else
+			error(word)
+		end
+	end,
+	["?"] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if value then
+			return nilify(value)
+		else
+			error(word)
+		end
+	end,
+	[":+"] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if nilify(value) then
+			return word
+		else
+			return nil
+		end
+	end,
+	["+"] = function(param, word)
+		nilify(word)
+		local value = os.getenv(param)
+		if value then
+			return word
+		else
+			return nil
+		end
+	end
+}
+
+local function paramOpPatt(op)
+	return "(.-)"..op:gsub("%W", "%%%0").."(.*)"
+end
+
+local expand -- forward declaration for mutual recursion
+local function paramExpand(contents)
+	for op, handler in pairs(paramOps) do
+		local param, word = contents:match(paramOpPatt(op))
+		if param then
+			if not param:match("%w+") then
+				error("bad substitution")
+			end
+			return handler(param, expand(word))
+		end
+	end
+	return os.getenv(contents)
+end
+
+expand = function(value)
 	local result = value:gsub("%$(%w+)", os.getenv):gsub("%$%b{}",
-		function(match) return os.getenv(expand(match:sub(3, -2))) or match end)
+		function(match)
+			local contents = unicode.sub(match, 3, -2)
+			if unicode.sub(contents, 1, 1) == "#" then
+				return tostring(unicode.len(paramExpand(unicode.sub(contents, 2)) or ""))
+			else
+				return paramExpand(contents) or match
+			end
+		end)
 	return result
 end
 
