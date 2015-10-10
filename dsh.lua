@@ -960,21 +960,20 @@ local function runPipeline(input, output, env, pipeline, ...)
 				args = table.pack(pcall(event.pull, table.unpack(result, 2, result.n)))
 			end
 		end
+
 		if pipes[i] then
 			pcall(pipes[i].close, pipes[i])
 		end
+
 		if not result[1] then
 			if type(result[2]) == "table" and result[2].reason == "terminated" then
-				if result[2].code then
-					result[1] = true
-					result.n = 1
-				else
-					result[2] = "terminated"
-				end
+				result[1] = true
+				result[2] = result[2].code
+				result.n = 2
 			elseif type(result[2]) == "string" then
 				result[2] = debug.traceback(threads[i], result[2])
+				break
 			end
-			break
 		end
 	end
 
@@ -1031,18 +1030,11 @@ local function eval(input, output, env, command, ...)
 	for i, pipeCell in ipairs(pipelines) do
 		local op, pipeline = pipeCell.op, pipeCell.pipeline
 		local results = {runPipeline(input, output, env, pipeline, ...)}
-		if results[1] == "exit" then
-			out = results
-			break
-		end
-		if results[1] then
-			if op == "or" then
-				return table.unpack(results)
-			end
-		else
-			if op == "and" or op == "pipe" then
-				return table.unpack(results)
-			end
+		local success = results[1] and (results[2] == true or results[2] == 0)
+		if success and op == "or" then
+			return table.unpack(results)
+		elseif op == "and" then
+			return table.unpack(results)
 		end
 		out = results
 	end
