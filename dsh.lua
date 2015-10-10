@@ -583,7 +583,14 @@ local function parseCommand(tokens, ...)
 			return nil, state
 		end
 	end
-	return program, args, input, output, mode
+	return {
+		program = program,
+		args    = args,
+		input   = input,
+		output  = output,
+		mode    = mode,
+		name    = name
+	}
 end
 
 local function parseCommands(command)
@@ -621,8 +628,12 @@ local function parseCommands(command)
 	end
 
 	for i, joinCell in pairs(commands) do
-		joinCell.command = table.pack(parseCommand(joinCell.command))
-		if joinCell.command[1] == nil then
+		local reason
+		joinCell.command, reason = parseCommand(joinCell.command)
+		if not joinCell.command then
+			return nil, reason
+		end
+		if joinCell.command.program == nil then
 			return nil, joinCell.command[2]
 		end
 	end
@@ -646,18 +657,18 @@ local function runPipeline(env, pipeline, ...)
 	-- custom stream may have 'redirect' entries for fallback/duplication.
 	local threads, pipes, inputs, outputs = {}, {}, {}, {}
 	for i = 1, #pipeline do
-		local program, args, input, output, mode = table.unpack(pipeline[i])
-		if program == "exit" then
+		local command = pipeline[i]
+		if command.program == "exit" then
 			threads[i] = "exit"
 			break
 		end
 		local reason
-		threads[i], reason = process.load(program, env, function()
-			os.setenv("_", program)
-			if input then
-				local file, reason = io.open(shell.resolve(input))
+		threads[i], reason = process.load(command.program, env, function()
+			os.setenv("_", command.program)
+			if command.input then
+				local file, reason = io.open(shell.resolve(command.input))
 				if not file then
-					error("could not open '" .. input .. "': " .. reason, 0)
+					error("could not open '" .. command.input .. "': " .. reason, 0)
 				end
 				table.insert(inputs, file)
 				if pipes[i - 1] then
@@ -669,10 +680,10 @@ local function runPipeline(env, pipeline, ...)
 			elseif pipes[i - 1] then
 				io.input(pipes[i - 1])
 			end
-			if output then
-				local file, reason = io.open(shell.resolve(output), mode == "append" and "a" or "w")
+			if command.output then
+				local file, reason = io.open(shell.resolve(command.output), command.mode == "append" and "a" or "w")
 				if not file then
-					error("could not open '" .. output .. "': " .. reason, 0)
+					error("could not open '" .. command.output .. "': " .. reason, 0)
 				end
 				if mode == "append" then
 					io.write("\n")
@@ -687,8 +698,8 @@ local function runPipeline(env, pipeline, ...)
 			elseif pipes[i] then
 				io.output(pipes[i])
 			end
-		io.write('')
-		end, command)
+			io.write('')
+		end, command.name)
 		if not threads[i] then
 			return false, reason
 		end
@@ -699,11 +710,11 @@ local function runPipeline(env, pipeline, ...)
 		end
 		if i > 1 then
 			pipes[i - 1].stream.next = threads[i]
-			pipes[i - 1].stream.args = args
+			pipes[i - 1].stream.args = command.args
 		end
 	end
 
-	local args = pipeline[1][2]
+	local args = pipeline[1].args
 	for _, arg in ipairs(table.pack(...)) do
 		table.insert(args, arg)
 	end
