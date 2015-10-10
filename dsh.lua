@@ -460,47 +460,59 @@ local function glob(value)
 	return paths
 end
 
+local function consumeQuote(str, open, close)
+	checkArg(1, str, "string")
+	checkArg(2, open, "string")
+	checkArg(3, close, "string")
+	if str:sub(1, #open) ~= open then
+		return nil, str
+	else
+		local quoted, rest = str:sub(#open + 1):match("(.-[^\\]"..close:gsub("%W", "%%%0")..")(.*)")
+		if not quoted then
+			return nil, str
+		end
+		return open..quoted, rest
+	end
+end
+
 local function evaluate(value)
-	local init, results = 1, {""}
-	repeat
-		local match = value:match("^%b''", init)
-		if match then -- single quoted string. no variable expansion.
+	local results, remaining = {""}, value
+	while remaining ~= "" do
+		local match, rest = consumeQuote(remaining, "'", "'")
+		if match then -- single quotes; no nested expansion
 			match = match:sub(2, -2)
-			init = init + 2
-			for i, result in ipairs(results) do
-				results[i] = result .. match
+			remaining = rest
+			for i,v in ipairs(results) do
+				results[i] = v..match
 			end
 		else
-			match = value:match('^%b""', init)
-			if match then -- double quoted string.
+			match, rest = consumeQuote(remaining, '"', '"')
+			if match then
 				match = match:sub(2, -2)
-				init = init + 2
+				remaining = rest
 			else
-				-- plaintext?
-				-- NOTE: backticks will be treated as plaintext
-				-- and evaluated in a separate pass
-				match = value:match("^([^']+)%b''", init)
-				if not match then -- unmatched single quote.
-					match = value:match('^([^"]+)%b""', init)
-					if not match then -- unmatched double quote.
-						match = value:sub(init)
-					end
+				match, rest = rest:match("(.-[^\\])([\"'].*)")
+				if match then -- consume until quote
+					remaining = rest
+				else -- if there's no opening quote consume the rest
+					match = remaining
+					remaining = ""
 				end
 			end
 			local newResults = {}
 			for _, globbed in ipairs(glob(match)) do
 				for i, result in ipairs(results) do
-					newResults[i] = result..globbed
+					table.insert(newResults, result..globbed)
 				end
 			end
 			results = newResults
 		end
-		init = init + #match
-	until init > #value
+	end
 
-	-- TODO Evaluate backticks, need to modularize
-	--      code more to make this possible
-
+	-- finally strip the backslashes
+	for i,v in ipairs(results) do
+		results[i] = v:gsub("\\(.)", "%1")
+	end
 	return results
 end
 
