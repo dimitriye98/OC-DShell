@@ -516,25 +516,200 @@ local function evaluate(value)
 	return results
 end
 
+local function parseParams(...)
+	local params = table.pack(...)
+	local disables
+	if type(params[1]) == "table" then
+		disables = table.remove(params, 1)
+	end
+	local args = {}
+	local options = {}
+	local doneWithOptions = false
+	for i = 1, params.n do
+		local param = params[i]
+		if not doneWithOptions and type(param) == "string" then
+			if param == "--" then
+				doneWithOptions = true -- stop processing options at `--`
+			elseif unicode.sub(param, 1, 2) == "--" then
+				if param:match("%-%-(.-)=") ~= nil then
+					options[param:match("%-%-(.-)=")] = param:match("=(.*)")
+				else
+					options[unicode.sub(param, 3)] = true
+					if disables then
+						local disable = disables[unicode.sub(param, 3)]
+						if disable then
+							if type(disable) == "string" then
+								options[disable] = nil
+							elseif type(disable) == "table" then
+								for _,flag in disable do
+									options[flag] = nil
+								end
+							end
+						end
+					end
+				end
+			elseif unicode.sub(param, 1, 1) == "-" and param ~= "-" then
+				for j = 2, unicode.len(param) do
+					options[unicode.sub(param, j, j)] = true
+					if disables then
+						local disable = disables[unicode.sub(param, j, j)]
+						if disable then
+							if type(disable) == "string" then
+								options[disable] = nil
+							elseif type(disable) == "table" then
+								for _,flag in disable do
+									options[flag] = nil
+								end
+							end
+						end
+					end
+				end
+			else
+				table.insert(args, param)
+			end
+		else
+			table.insert(args, param)
+		end
+	end
+	return args, options
+end
+
+local esc = string.char(0x1B)
+local builtIns = {
+	[":"] = function() --[[ Do nothing ]] end;
+	["source"] = function(_, output, env, fName, ...)
+		local ret = {eval(io.open(fName), output, env, table.concat({...}, " ") )}
+		file:close()
+		return table.unpack(ret)
+	end;
+	["eval"] = function(input, output, env, ...)
+		return eval(input, output, env, table.concat({...}, " "))
+	end;
+	["exec"] = function(input, output, env, ...)
+		-- Unfortunately the flag options seem impossible to implement given
+		-- the way the process library currently works
+		local success, code = eval(input, output, env, table.concat({...}, " "))
+		if success then
+			os.exit(code)
+		else
+			error(code)
+		end
+	end;
+	["echo"] = function(input, output, env, ...)
+		local args = parseParams({e="E", E="e"}, ...)
+		local defaultEscapes = os.getenv("echoEscapes")
+		if defaultEscapes == "false" then
+			defaultEscapes = false
+		else
+			defaultEscapes = true
+		end
+		local str = table.concat(args, " ")
+		if defaultEscapes and (not args.E) or args.e then
+			local out, escaped, i = {}, false, 0
+			while i < unicode.len(str) do
+				i = i + 1
+				local char = unicode.sub(str, i, i)
+				if escaped then
+					if char == "b" then
+						table.remove(out)
+					elseif char == "c" then
+						break
+					elseif char == "e" or char == "E" then
+						table.insert(out, esc)
+					elseif char == "f" then
+						table.insert(out, "\f")
+					elseif char == "n" then
+						table.insert(out, "\n")
+					elseif char == "r" then
+						table.insert(out, "\r")
+					elseif char == "t" then
+						table.insert(out, "\t")
+					elseif char == "v" then
+						table.insert(out, "\v")
+					elseif char == "\\" then
+						table.insert(out, "\\")
+					elseif char == "0" then
+						local code = tonumber(unicode.sub(str, i+1, i+3), 8)
+						if code then
+							table.insert(out, unicode.char(code))
+							i = i + 3
+						else
+							table.insert(out, "\\")
+							table.insert(out, "0")
+						end
+					elseif char == "x" then
+						local code = tonumber(unicode.sub(str, i+1, i+2), 16)
+						if code then
+							table.insert(out, unicode.char(code))
+							i = i + 2
+						else
+							table.insert(out, "\\")
+							table.insert(out, "x")
+						end
+					elseif char == "u" then
+						local code = str:match("%x%x%x%x") -- 4 hexdecimal digits
+						if code then
+							i = i + 4
+							code = tonumber(code, 16)
+							table.insert(out, unicode.char(code))
+						else
+							table.insert(out, "\\")
+							table.insert(out, "u")
+						end
+					elseif char == "U" then
+						local code = str:match("%x%x%x%x%x%x%x%x") -- 8 hexdecimal digits
+						if code then
+							i = i + 8
+							code = tonumber(code, 16)
+							table.insert(out, unicode.char(code))
+						else
+							table.insert(out, "\\")
+							table.insert(out, "u")
+						end
+					else
+						table.insert(out, "\\")
+						table.insert(out, char)
+					end
+					escaped = false
+				else
+					if char == "\\" then
+						escaped = true
+					else
+						table.insert(out, char)
+					end
+				end
+			end
+			str = table.concat(out)
+		end
+		output:write(str)
+		if not args.n then
+			output:write("\n")
+		end
+	end,
+	["exit"] = true -- Exit needs special processing
+}
+
 local function parseCommand(tokens, ...)
 	if #tokens == 0 then
 		return
 	end
 
-	if tokens[1] == "exit" then
-		return "exit"
-	end
-
-	local program, args = shell.resolveAlias(tokens[1], table.pack(select(2, table.unpack(tokens))))
+	local name = tokens[1]
+	local program, args = shell.resolveAlias(name, table.pack(select(2, table.unpack(tokens))))
 
 	local eargs = {}
 	program = evaluate(program)
 	for i = 2, #program do
 		table.insert(eargs, program[i])
 	end
-	local program, reason = shell.resolve(program[1], "lua")
-	if not program then
-		return nil, reason
+	local reason
+	if builtIns[program[1]] then
+		program = program[1]
+	else
+		program, reason = shell.resolve(program[1], "lua")
+		if not program then
+			return nil, reason
+		end
 	end
 	for i = 1, #args do
 		for _, arg in ipairs(evaluate(args[i])) do
@@ -644,8 +819,11 @@ end
 -------------------------------------------------------------------------------
 
 local function runPipeline(env, pipeline, ...)
-	if pipeline[1][1] == "exit" then
-		return "exit", true
+	if pipeline[1].program == "exit" then
+		-- If the first command exits further
+		-- processing is unnecessary.
+		local code = pipeline[1].args[1]
+		os.exit(tonumber(code) or code)
 	end
 
 	-- Piping data between programs works like so:
@@ -659,52 +837,94 @@ local function runPipeline(env, pipeline, ...)
 	for i = 1, #pipeline do
 		local command = pipeline[i]
 		if command.program == "exit" then
-			threads[i] = "exit"
+			threads[i] = {"exit", tonumber(command.args[1]) or command.args[1]}
 			break
 		end
-		local reason
-		threads[i], reason = process.load(command.program, env, function()
-			os.setenv("_", command.program)
-			if command.input then
-				local file, reason = io.open(shell.resolve(command.input))
-				if not file then
-					error("could not open '" .. command.input .. "': " .. reason, 0)
+		local builtIn = builtIns[command.program]
+		if builtIn then
+			threads[i] = coroutine.create(function(...)
+				local input, output = input, output
+				if command.input then
+					local file, reason = io.open(shell.resolve(command.input))
+					if not file then
+						error("could not open '" .. command.input .. "': " .. reason, 0)
+					end
+					table.insert(inputs, file)
+					if pipes[i - 1] then
+						pipes[i - 1].stream.redirect.read = file
+						input = pipes[i - 1]
+					else
+						input = file
+					end
+				elseif pipes[i - 1] then
+					input = pipes[i - 1]
 				end
-				table.insert(inputs, file)
-				if pipes[i - 1] then
-					pipes[i - 1].stream.redirect.read = file
+				if command.output then
+					local file, reason = io.open(shell.resolve(command.output), command.mode == "append" and "a" or "w")
+					if not file then
+						error("could not open '" .. command.output .. "': " .. reason, 0)
+					end
+					if command.mode == "append" then
+						io.write("\n")
+					end
+					table.insert(outputs, file)
+					if pipes[i] then
+						pipes[i].stream.redirect.write = file
+						output = pipes[i]
+					else
+						output = file
+					end
+				elseif pipes[i] then
+					output = pipes[i]
+				end
+				output.write("")
+				return builtIn(input, output, env, ...)
+			end)
+		else
+			local reason
+			threads[i], reason = process.load(command.program, env, function()
+				os.setenv("_", command.program)
+				if command.input then
+					local file, reason = io.open(shell.resolve(command.input))
+					if not file then
+						error("could not open '" .. command.input .. "': " .. reason, 0)
+					end
+					table.insert(inputs, file)
+					if pipes[i - 1] then
+						pipes[i - 1].stream.redirect.read = file
+						io.input(pipes[i - 1])
+					else
+						io.input(file)
+					end
+				elseif pipes[i - 1] then
 					io.input(pipes[i - 1])
-				else
-					io.input(file)
 				end
-			elseif pipes[i - 1] then
-				io.input(pipes[i - 1])
-			end
-			if command.output then
-				local file, reason = io.open(shell.resolve(command.output), command.mode == "append" and "a" or "w")
-				if not file then
-					error("could not open '" .. command.output .. "': " .. reason, 0)
-				end
-				if mode == "append" then
-					io.write("\n")
-				end
-				table.insert(outputs, file)
-				if pipes[i] then
-					pipes[i].stream.redirect.write = file
+				if command.output then
+					local file, reason = io.open(shell.resolve(command.output), command.mode == "append" and "a" or "w")
+					if not file then
+						error("could not open '" .. command.output .. "': " .. reason, 0)
+					end
+					if command.mode == "append" then
+						io.write("\n")
+					end
+					table.insert(outputs, file)
+					if pipes[i] then
+						pipes[i].stream.redirect.write = file
+						io.output(pipes[i])
+					else
+						io.output(file)
+					end
+				elseif pipes[i] then
 					io.output(pipes[i])
-				else
-					io.output(file)
 				end
-			elseif pipes[i] then
-				io.output(pipes[i])
-			end
-			io.write('')
-		end, command.name)
+				io.write('')
+			end, command.name)
+		end
 		if not threads[i] then
 			return false, reason
 		end
 
-		if i < #pipeline then
+		if i < #pipeline and pipeline[i + 1].program ~= "exit" then
 			pipes[i] = require("buffer").new("rw", memoryStream.new())
 			pipes[i]:setvbuf("no")
 		end
@@ -722,10 +942,10 @@ local function runPipeline(env, pipeline, ...)
 	args.n = #args
 	local result = nil
 	for i = 1, #threads do
-		if threads[i] == "exit" then
-			result = {"exit", table.unpack(result)}
-			break
+		if type(threads[i]) == "table" and threads[i][1] == "exit" then -- Exit logic
+			os.exit(threads[i][2])
 		end
+
 		-- Emulate CC behavior by making yields a filtered event.pull()
 		while args[1] and coroutine.status(threads[i]) ~= "dead" do
 			result = table.pack(coroutine.resume(threads[i], table.unpack(args, 2, args.n)))
