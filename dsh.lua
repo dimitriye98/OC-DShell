@@ -778,7 +778,7 @@ local function runPipeline(input, output, env, pipeline, ...)
 						error("could not open '" .. command.input .. "': " .. reason, 0)
 					end
 					table.insert(inputs, file)
-					if i > 1 and pipes[i - 1] then
+					if pipes[i - 1] then
 						pipes[i - 1].stream.redirect.read = file
 						input = pipes[i - 1]
 					else
@@ -796,7 +796,7 @@ local function runPipeline(input, output, env, pipeline, ...)
 						io.write("\n")
 					end
 					table.insert(outputs, file)
-					if i < #pipeline and pipes[i] then
+					if pipes[i] then
 						pipes[i].stream.redirect.write = file
 						output = pipes[i]
 					else
@@ -818,7 +818,7 @@ local function runPipeline(input, output, env, pipeline, ...)
 						error("could not open '" .. command.input .. "': " .. reason, 0)
 					end
 					table.insert(inputs, file)
-					if i > 1 and pipes[i - 1] then
+					if pipes[i - 1] then
 						pipes[i - 1].stream.redirect.read = file
 						io.input(pipes[i - 1])
 					else
@@ -836,7 +836,7 @@ local function runPipeline(input, output, env, pipeline, ...)
 						io.write("\n")
 					end
 					table.insert(outputs, file)
-					if i < #pipeline and pipes[i] then
+					if pipes[i] then
 						pipes[i].stream.redirect.write = file
 						io.output(pipes[i])
 					else
