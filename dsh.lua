@@ -155,6 +155,7 @@ local function tokenize(value)
 
 	local tokens, token = {}, {}
 	local start, quoted
+	local lastOp
 	while lookahead() do
 		local char = lookahead()
 		local closed
@@ -186,11 +187,15 @@ local function tokenize(value)
 					if isOp then
 						local tokenOut = table.concat(token)
 						if tokenOut == "" then
-							return nil, "parse error near '"..isOp.."'"
+							if tokens[#tokens] == lastOp then
+								return nil, "parse error near '"..isOp.."'"
+							end
+						else
+							table.insert(tokens, tokenOut)
 						end
-						table.insert(tokens, tokenOut)
 						table.insert(tokens, isOp)
 						token = {}
+						lastOp = isOp
 						break
 					end
 				end
