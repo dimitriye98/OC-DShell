@@ -955,7 +955,7 @@ local function eval(input, output, env, command, ...)
 	for i, pipeCell in ipairs(pipelines) do
 		local op, pipeline = pipeCell.op, pipeCell.pipeline
 		local results = {runPipeline(input, output, env, pipeline, ...)}
-		local success = results[1] and (results[2] == true or results[2] == 0)
+		local success = results[1] and (results[2] == nil or results[2] == true or results[2] == 0)
 		if success and op == "or" then
 			return table.unpack(results)
 		elseif op == "and" then
