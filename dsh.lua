@@ -1091,25 +1091,11 @@ elseif (io.input() == io.stdin or options.i) then
 			end
 			component.gpu.setForeground(foreground)
 			accumulator = accumulator..term.read(history, nil, hintHandler)
-			if not accumulator then
-				term.write("exit\n")
-				return -- eof
-			end
 			while #history > (tonumber(os.getenv("HISTSIZE")) or 10) do
 				table.remove(history, 1)
 			end
-			accumulator = text.trim(accumulator)
-			if accumulator == "exit" then
-				return
-			elseif accumulator ~= "" then
+			if accumulator ~= "" then
 				local result, reason, quote = execute(nil, accumulator)
-				local exit
-				if result == "exit" then
-					result = reason
-					reason = quote
-					quote  = nil
-					exit   = true
-				end
 				if term.getCursor() > 1 then
 					term.write("\n")
 				end
@@ -1125,9 +1111,6 @@ elseif (io.input() == io.stdin or options.i) then
 						accumulator = ""
 						unmatchedQuote = nil
 					end
-				end
-				if exit then
-					return
 				end
 			end
 		end
