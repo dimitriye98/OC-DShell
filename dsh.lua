@@ -200,7 +200,11 @@ local function tokenize(value)
 					end
 				end
 				if not isOp then
-					if char:match("%s") then
+					if char == "#" then -- comment
+						while lookahead() ~= "\n" do
+							consume()
+						end
+					elseif char:match("%s") then
 						local tokenOut = table.concat(token)
 						if tokenOut ~= "" then
 							table.insert(tokens, table.concat(token))
