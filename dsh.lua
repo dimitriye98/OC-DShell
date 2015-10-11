@@ -1115,41 +1115,12 @@ elseif (io.input() == io.stdin or options.i) then
 			end
 		end
 	end
-elseif #args == 0 and (io.input() ~= io.stdin) then
-	local accumulator = ""
-	while true do
-		io.write(expand(os.getenv("PS1") or "$ "))
-		local command = io.read("*l")
-		if not command then
-			io.write("exit\n")
-		end
-		accumulator = accumulator..text.trim(command)
-		if accumulator == "exit" then
-			return
-		elseif accumulator ~= "" then
-			local result, reason, quote = execute(nil, accumulator)
-			local exit
-			if result == "exit" then
-				result = reason
-				reason = quote
-				quote  = nil
-				exit   = true
-			end
-			if result then
-				accumulator = ""
-			else
-				if reason:match("unclosed quote") then
-					accumulator = accumulator.."\n"
-				else
-					io.stderr:write((reason and tostring(reason) or "unknown error") .. "\n")
-					accumulator = ""
-				end
-			end
-			if exit then
-				return
-			end
-		end
+elseif io.input() ~= io.stdin then
+	local result = table.pack(execute(nil, io.read("*a"), ...))
+	if not result[1] then
+		io.stderr:write(result[2])
 	end
+	return table.unpack(result, 2)
 else
 	-- execute command.
 	local result = table.pack(execute(...))
