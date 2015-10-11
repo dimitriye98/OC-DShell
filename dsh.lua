@@ -98,7 +98,7 @@ local function litPattern(str)
 	return str:gsub("%W", "%%%0")
 end
 
-local operators = {"&&", "||", ";", "|"} -- must be ordered from long to short
+local operators = {"&&", "||", ";", "\n", "|"} -- must be ordered from long to short
 
 local quotes = {
 	"${", "$(", '"', "'", "`"; -- array part must be ordered from long to short
@@ -696,7 +696,8 @@ local function parseCommands(command)
 		["|"]  = "pipe",
 		["&&"] = "and",
 		["||"] = "or",
-		[";"]  = "delim"
+		[";"]  = "delim",
+		["\n"] = "delim"
 	}
 	local lastJoin = "pipe" -- First element is treated as if preceded by a
 	                        -- pipe, makes pipeline construction easier
