@@ -925,7 +925,7 @@ local function runPipeline(input, output, env, pipeline, ...)
 end
 
 local function eval(input, output, env, command, ...)
-	checkArg(1, command, "string")
+	checkArg(4, command, "string")
 	local commands, reason, quote = parseCommands(command)
 	if not commands then
 		return false, reason, quote
@@ -966,8 +966,9 @@ local function eval(input, output, env, command, ...)
 	return table.unpack(out)
 end
 
-local function execute(...)
-	return eval(nil, nil, ...)
+local function execute(env, command, ...)
+	checkArg(2, command, "string")
+	return eval(nil, nil, env, command, ...)
 end
 
 local args, options = shell.parse(...)
