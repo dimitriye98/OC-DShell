@@ -1060,7 +1060,7 @@ local function hintHandler(line, cursor)
 end
 
 if args.version then
-	return print("OpenComputers dsh 0.1.0")
+	return print("dsh 0.2.0 (OpenOS 1.5)")
 end
 
 local quotePrefixes = {["'"] = "quote> ", ["\""] = "dquote> ", ["`"] = "bquote> "}
